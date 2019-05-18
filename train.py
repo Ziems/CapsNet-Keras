@@ -51,6 +51,31 @@ class DigiCap(layers.Layer):
 
     def build(self, input_shape):
         "The input Tensor should have shape=[None, input_num_capsule, input_dim_vector]"
+        assert len(input_shape) >= 3
+        self.input_num_capsule = input_shape[1]
+        self.input_dim_vector = input_shape[2]
+
+        # Transform matrix W
+        self.W = self.add_weight(shape=[self.input_num_capsule, self.num_capsule,
+                                 self.input_dim_vector, self.dim_vector],
+                                 initializer=self.kernel_initializer,
+                                 name='W')
+        # Coupling coefficient.
+        # The redundant dimensions are just to facilitate subsequent matrix calculation
+        self.b = self.add_weight(shape=[1, self.input_num_capsule, self.num_capsule, 1, 1],
+                                    initializer=self.b_initializer,
+                                    name='b',
+                                    trainable=False)
+        self.built = True
+
+    def call(self, inputs, training=None):
+        # inputs.shape = (None, input_num_capsule, input_dim_vector)
+        # Expand dims to (None, input_num_capsule, 1, 1, input_input_dim_vector)
+        inputs_expand = K.expand_dims(K.expand_dims(inputs, 2), 2)
+
+        # Replicate num_capsule dimension to prepare being multiplied by W
+        # Now shape = [None, input_num_capsule, num_capsule, 1, input_dim_vector]
+
 
 def PrimaryCap(inputs, dim_vector, n_channels, kernel_size, strides, padding):
     """
