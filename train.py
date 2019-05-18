@@ -18,6 +18,26 @@ class Length(layers.Layer):
         # of the sum of the capsule element
         return K.sqrt(K.sum(K.square(inputs), -1))
 
+class Mask(layers.Layer):
+    """
+    Mask a Tensor with shape=[None, d1, d2] by the max value in axis=1.
+    Output shape: [None, d2]
+    """
+    def call(self, inputs, **kwargs):
+        # user true label to select target capsule, shape=[batch_size, num_capsule]
+        if type(inputs) is list: # true label is provided with shape = [batch_size, n_classes], i.e. one-hot encoding
+            assert len(inputs) == 2
+            inputs, mask = inputs
+        else:
+            x = inputs
+            # Enlarge the range of values in x to make max(new_x)=1 and others <0
+            x = (x - K.max(x, 1, True)) / K.epsilon() + 1
+            mask = K.clip(x, 0, 1) # the max value in x clipped to 1 and other to 0
+
+        # masked inputs, shape = [batch_size, dim_vector]
+        inputs_masked = K.batch_dot(inputs, mask, [1, 1])
+        return inputs_masked
+
 def squash(vectors, axis=-1):
     """
     The non-linear activation used in Capsule. It drives the length of a large vector near 1 and a small vector near 0
@@ -75,6 +95,25 @@ class DigiCap(layers.Layer):
 
         # Replicate num_capsule dimension to prepare being multiplied by W
         # Now shape = [None, input_num_capsule, num_capsule, 1, input_dim_vector]
+        inputs_tiled = K.tile(inputs_expand, [1, 1, self.num_capsule, 1, 1])
+
+        # However, we will implement the same code with a faster implementation using tf.sacn	
+        # Compute `inputs * W` by scanning inputs_tiled on dimension 0. 
+        # inputs_hat.shape = [None, input_num_capsule, num_capsule, 1, dim_vector]
+        inputs_hat = tf.scan(lambda ac, x: K.batch_dot(x, self.W, [3, 2]),
+                             elems=inputs_tiled,
+                             initializer=K.zeros([self.input_num_capsule, self.num_capsule, 1, self.dim_vector]))
+
+        # Routing algorithm
+        assert self.num_routing > 0, 'the num_routing should be > 0.'
+        for i in range(self.num_routing):
+            c = tf.nn.softmax(self.b, dim=2) # dim=2 is the num_capsule dimension
+            outputs = squash(K.sum(c * inputs_hat, 1, keepdims=True))
+
+            # last iteration needs not compute b which will not be passed to the graph anymore anyway
+            if i != self.num_routing -1:
+                self.b += K.sum(inputs_hat * outputs, -1, keepdims=True)
+        return K.reshape(outputs, [-1, self.num_capsule, self.dim_vector])
 
 
 def PrimaryCap(inputs, dim_vector, n_channels, kernel_size, strides, padding):
