@@ -1,5 +1,9 @@
 from keras import backend as K
 from keras import layers
+from keras import models
+
+import tensorflow as tf
+from tensorflow import initializers
 
 def margin_los(y_true, y_pred):
     """
@@ -115,7 +119,6 @@ class DigiCap(layers.Layer):
                 self.b += K.sum(inputs_hat * outputs, -1, keepdims=True)
         return K.reshape(outputs, [-1, self.num_capsule, self.dim_vector])
 
-
 def PrimaryCap(inputs, dim_vector, n_channels, kernel_size, strides, padding):
     """
     Apply Conv2D `n_channels` times and concatenate all capsules
@@ -150,7 +153,7 @@ def CapsNet(input_shape, n_class, num_routing):
                     kernel_size=9, strides=2, padding='valid')
     
     # DigiCap: Capsule layer. Routing algorithm works here
-    digicaps = DigiCaps(num_capsule=n_class, dim_vector=16,
+    digicaps = DigiCap(num_capsule=n_class, dim_vector=16,
                     num_routing=num_routing, name='digitcaps')(primarycaps)
 
     # The length of the capsule's output vector
